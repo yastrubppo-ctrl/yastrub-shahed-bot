@@ -1,0 +1,41 @@
+name: Бот пусків БпЛА (шахедів)
+on:
+  workflow_dispatch:           # запускає cron-job.org кожні 1–2 хв; є й ручна кнопка Run workflow
+    inputs:
+      dry_run:
+        description: 'true = лише показати повідомлення в логу, нічого не надсилати'
+        default: 'false'
+      max_age_min:
+        description: 'Для тесту: брати новини за останні N хвилин (порожньо = 20)'
+        default: ''
+concurrency:
+  group: shahed-bot
+  cancel-in-progress: false
+permissions:
+  contents: write              # щоб зберігати пам'ять (state.json) про надіслане
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Запуск бота
+        run: node bot.mjs
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          FOOTER_TEXT: ${{ vars.FOOTER_TEXT }}
+          FOOTER_LINK: ${{ vars.FOOTER_LINK }}
+          DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
+          MAX_AGE_MIN: ${{ inputs.max_age_min }}
+      - name: Зберегти пам'ять (лише якщо змінилась)
+        if: always()
+        run: |
+          if [ -f state.json ]; then
+            git config user.name "yastrub-bot"
+            git config user.email "bot@users.noreply.github.com"
+            git add state.json
+            git diff --cached --quiet || (git commit -m "state" && git push)
+          fi
