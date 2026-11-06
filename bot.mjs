@@ -6,13 +6,18 @@
 //   DRY_RUN=1                    — нічого не надсилати і не зберігати, лише друкувати в лог
 //   MAX_AGE_MIN=20               — брати новини не старші за стільки хвилин
 //   FOOTER_TEXT, FOOTER_LINK     — необов'язковий підпис («Яструб Моніторить 🦅» + посилання)
-//   DIMAP_NEWS_URL, TG_API_BASE  — для тестів (за замовчуванням справжні адреси)
+//   DIMAP_NEWS_URL              — адреса DIMAP News: за замовчуванням https://api.dimap.live/news.
+//                                 Якщо Cloudflare блокує GitHub (HTTP 403 «Just a moment…») — вкажи свій проксі
+//                                 https://ТВІЙ-САЙТ.vercel.app/api/dimap/news (той самий DIMAP, але через твій сервер)
+//   VERCEL_BYPASS               — ключ «Protection Bypass for Automation» (потрібен, якщо сайт на Vercel закритий захистом)
+//   TG_API_BASE                 — лише для тестів
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { BOT_NAME, pickNewEvents, formatEvents } from './parser.mjs';
 
 const { TG_BOT_TOKEN, TG_CHAT_ID } = process.env;
 const NEWS_URL = process.env.DIMAP_NEWS_URL || 'https://api.dimap.live/news';
+const VERCEL_BYPASS = process.env.VERCEL_BYPASS || '';
 const TG_API = process.env.TG_API_BASE || 'https://api.telegram.org';
 const MAX_AGE_MIN = Number(process.env.MAX_AGE_MIN || 20);
 const DRY_RUN = process.env.DRY_RUN === '1';
@@ -58,10 +63,17 @@ async function fetchNews() {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 15000);
     try {
-      const r = await fetch(NEWS_URL, { headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (compatible; yastrub-bot)' }, signal: ctrl.signal });
+      const headers = { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (compatible; yastrub-bot)' };
+      // ключ Vercel відправляємо ЛИШЕ на адресу, яку задав ти (ніколи не на api.dimap.live)
+      if (VERCEL_BYPASS && new URL(NEWS_URL).hostname !== 'api.dimap.live') headers['x-vercel-protection-bypass'] = VERCEL_BYPASS;
+      const r = await fetch(NEWS_URL, { headers, signal: ctrl.signal });
       console.log(`DIMAP News: HTTP ${r.status} (спроба ${attempt})`);
       const body = await r.text();
-      if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + body.slice(0, 120));
+      if (!r.ok) {
+        if (/just a moment|cf-chl|cloudflare/i.test(body)) console.log('ℹ️ Це захист Cloudflare від автоматичних запитів: він не пускає сервери GitHub. Вкажи у секреті DIMAP_NEWS_URL адресу через свій Vercel (…/api/dimap/news).');
+        else if (/vercel authentication|_vercel_sso|authentication required/i.test(body)) console.log('ℹ️ Сайт на Vercel закритий захистом. Додай секрет VERCEL_BYPASS (Protection Bypass for Automation).');
+        throw new Error('HTTP ' + r.status + ' ' + body.slice(0, 120).replace(/\s+/g, ' '));
+      }
       let j; try { j = JSON.parse(body); } catch { throw new Error('відповідь не JSON: ' + body.slice(0, 120)); }
       const root = Array.isArray(j) ? '[масив]' : Object.keys(j || {}).join(', ');
       const feed = normalizeFeed(j);
