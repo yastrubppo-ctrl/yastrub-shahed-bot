@@ -30,6 +30,8 @@ jobs:
           FOOTER_LINK: ${{ vars.FOOTER_LINK }}
           DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
           MAX_AGE_MIN: ${{ inputs.max_age_min }}
+          DIMAP_NEWS_URL: ${{ secrets.DIMAP_NEWS_URL }}
+          VERCEL_BYPASS: ${{ secrets.VERCEL_BYPASS }}
       - name: Зберегти пам'ять (лише якщо змінилась)
         if: always()
         run: |
